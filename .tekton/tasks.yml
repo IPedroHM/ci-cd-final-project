@@ -1,3 +1,4 @@
+# ---------- Task: Cleanup ----------
 apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
@@ -19,19 +20,37 @@ spec:
         #!/usr/bin/env sh
         set -eu
         echo "Removing all files from ${WORKSPACE_SOURCE_PATH} ..."
-        # Delete any existing contents of the directory if it exists.
-        #
-        # We don't just "rm -rf ${WORKSPACE_SOURCE_PATH}" because ${WORKSPACE_SOURCE_PATH} might be "/"
-        # or the root of a mounted volume.
         if [ -d "${WORKSPACE_SOURCE_PATH}" ]; then
-          # Delete non-hidden files and directories
           rm -rf "${WORKSPACE_SOURCE_PATH}"/*
-          # Delete files and directories starting with . but excluding ..
           rm -rf "${WORKSPACE_SOURCE_PATH}"/.[!.]*
-          # Delete files and directories starting with .. plus any other character
           rm -rf "${WORKSPACE_SOURCE_PATH}"/..?*
         fi
+
 ---
+
+# ---------- Task: Flake8 ----------
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: flake8
+spec:
+  workspaces:
+    - name: source
+  steps:
+    - name: run-flake8
+      image: python:3.9-slim
+      workingDir: $(workspaces.source.path)
+      script: |
+        #!/bin/bash
+        set -e
+        python -m pip install --upgrade pip wheel
+        pip install flake8
+        flake8 service --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 service --count --max-complexity=10 --max-line-length=127 --statistics
+
+---
+
+# ---------- Task: Nose ----------
 apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
@@ -54,3 +73,91 @@ spec:
         python -m pip install --upgrade pip wheel
         pip install -r requirements.txt
         nosetests $(params.args)
+
+---
+
+# ---------- Pipeline ----------
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: full-ci-pipeline
+spec:
+  workspaces:
+    - name: source
+  tasks:
+    - name: cleanup
+      taskRef:
+        name: cleanup
+      workspaces:
+        - name: source
+          workspace: source
+
+    - name: git-clone
+      runAfter: [cleanup]
+      taskRef:
+        name: git-clone
+        kind: ClusterTask
+      workspaces:
+        - name: output
+          workspace: source
+      params:
+        - name: url
+          value: "https://github.com/<SEU_REPOSITORIO>"
+        - name: deleteExisting
+          value: "true"
+
+    - name: flake8
+      runAfter: [git-clone]
+      taskRef:
+        name: flake8
+      workspaces:
+        - name: source
+          workspace: source
+
+    - name: nose
+      runAfter: [flake8]
+      taskRef:
+        name: nose
+      workspaces:
+        - name: source
+          workspace: source
+      params:
+        - name: args
+          value: "-v --with-spec --spec-color --with-coverage --cover-package=app"
+
+    - name: buildah
+      runAfter: [nose]
+      taskRef:
+        name: buildah
+        kind: ClusterTask
+      workspaces:
+        - name: source
+          workspace: source
+      params:
+        - name: IMAGE
+          value: image-registry.openshift-image-registry.svc:5000/$(context.pipelineRun.namespace)/my-image:latest
+
+  finally:
+    - name: deploy
+      taskRef:
+        name: openshift-client
+        kind: ClusterTask
+      params:
+        - name: SCRIPT
+          value: |
+            oc rollout restart deployment/my-deployment
+
+---
+
+# ---------- PipelineRun ----------
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  name: full-ci-pipeline-run
+spec:
+  pipelineRef:
+    name: full-ci-pipeline
+  workspaces:
+    - name: source
+      persistentVolumeClaim:
+        claimName: my-source-pvc
