@@ -84,6 +84,13 @@ metadata:
 spec:
   workspaces:
     - name: source
+  params:
+    - name: app-name
+      type: string
+      default: my-app
+    - name: build-image
+      type: string
+      default: image-registry.openshift-image-registry.svc:5000/$(context.pipelineRun.namespace)/my-image:latest
   tasks:
     - name: cleanup
       taskRef:
@@ -135,7 +142,7 @@ spec:
           workspace: source
       params:
         - name: IMAGE
-          value: image-registry.openshift-image-registry.svc:5000/$(context.pipelineRun.namespace)/my-image:latest
+          value: $(params.build-image)
 
   finally:
     - name: deploy
@@ -145,7 +152,7 @@ spec:
       params:
         - name: SCRIPT
           value: |
-            oc rollout restart deployment/my-deployment
+            oc create deployment $(params.app-name) --image=$(params.build-image) --dry-run=client -o yaml | oc apply -f -
 
 ---
 
@@ -157,6 +164,11 @@ metadata:
 spec:
   pipelineRef:
     name: full-ci-pipeline
+  params:
+    - name: app-name
+      value: my-app
+    - name: build-image
+      value: image-registry.openshift-image-registry.svc:5000/sn-labs-manvig1/my-image:latest
   workspaces:
     - name: source
       persistentVolumeClaim:
