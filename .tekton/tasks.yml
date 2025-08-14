@@ -109,7 +109,7 @@ spec:
           workspace: source
       params:
         - name: url
-          value: "https://github.com/<SEU_REPOSITORIO>"
+          value: "https://github.com/IPedroHM/ci-cd-final-project.git"
         - name: deleteExisting
           value: "true"
 
