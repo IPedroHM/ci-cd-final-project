@@ -5,25 +5,25 @@ metadata:
   name: cleanup
 spec:
   workspaces:
-    - name: source
+    - name: output
   steps:
     - name: remove
       image: alpine:3
       env:
-        - name: WORKSPACE_SOURCE_PATH
-          value: $(workspaces.source.path)
-      workingDir: $(workspaces.source.path)
+        - name: WORKSPACE_OUTPUT_PATH
+          value: $(workspaces.output.path)
+      workingDir: $(workspaces.output.path)
       securityContext:
         runAsNonRoot: false
         runAsUser: 0
       script: |
         #!/usr/bin/env sh
         set -eu
-        echo "Removing all files from ${WORKSPACE_SOURCE_PATH} ..."
-        if [ -d "${WORKSPACE_SOURCE_PATH}" ]; then
-          rm -rf "${WORKSPACE_SOURCE_PATH}"/*
-          rm -rf "${WORKSPACE_SOURCE_PATH}"/.[!.]*
-          rm -rf "${WORKSPACE_SOURCE_PATH}"/..?*
+        echo "Removing all files from ${WORKSPACE_OUTPUT_PATH} ..."
+        if [ -d "${WORKSPACE_OUTPUT_PATH}" ]; then
+          rm -rf "${WORKSPACE_OUTPUT_PATH}"/*
+          rm -rf "${WORKSPACE_OUTPUT_PATH}"/.[!.]*
+          rm -rf "${WORKSPACE_OUTPUT_PATH}"/..?*
         fi
 
 ---
@@ -35,11 +35,11 @@ metadata:
   name: flake8
 spec:
   workspaces:
-    - name: source
+    - name: output
   steps:
     - name: run-flake8
       image: python:3.9-slim
-      workingDir: $(workspaces.source.path)
+      workingDir: $(workspaces.output.path)
       script: |
         #!/bin/bash
         set -e
@@ -57,7 +57,7 @@ metadata:
   name: nose
 spec:
   workspaces:
-    - name: source
+    - name: output
   params:
     - name: args
       description: Arguments to pass to nose
@@ -66,7 +66,7 @@ spec:
   steps:
     - name: nosetests
       image: python:3.9-slim
-      workingDir: $(workspaces.source.path)
+      workingDir: $(workspaces.output.path)
       script: |
         #!/bin/bash
         set -e
@@ -83,7 +83,7 @@ metadata:
   name: full-ci-pipeline
 spec:
   workspaces:
-    - name: source
+    - name: output
   params:
     - name: app-name
       type: string
@@ -96,8 +96,8 @@ spec:
       taskRef:
         name: cleanup
       workspaces:
-        - name: source
-          workspace: source
+        - name: output
+          workspace: output
 
     - name: git-clone
       runAfter: [cleanup]
@@ -106,7 +106,7 @@ spec:
         kind: ClusterTask
       workspaces:
         - name: output
-          workspace: source
+          workspace: output
       params:
         - name: url
           value: "https://github.com/IPedroHM/ci-cd-final-project.git"
@@ -118,16 +118,16 @@ spec:
       taskRef:
         name: flake8
       workspaces:
-        - name: source
-          workspace: source
+        - name: output
+          workspace: output
 
     - name: nose
       runAfter: [flake8]
       taskRef:
         name: nose
       workspaces:
-        - name: source
-          workspace: source
+        - name: output
+          workspace: output
       params:
         - name: args
           value: "-v --with-spec --spec-color --with-coverage --cover-package=app"
@@ -138,8 +138,8 @@ spec:
         name: buildah
         kind: ClusterTask
       workspaces:
-        - name: source
-          workspace: source
+        - name: output
+          workspace: output
       params:
         - name: IMAGE
           value: $(params.build-image)
@@ -170,6 +170,6 @@ spec:
     - name: build-image
       value: image-registry.openshift-image-registry.svc:5000/sn-labs-manvig1/my-image:latest
   workspaces:
-    - name: source
+    - name: output
       persistentVolumeClaim:
-        claimName: my-source-pvc
+        claimName: my-output-pvc
